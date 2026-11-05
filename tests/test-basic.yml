@@ -1,0 +1,53 @@
+name: Test basic usage (venv installer, defaults)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Prepare python environment
+        run: |
+          SUDO=""; [ "$(id -u)" != "0" ] && SUDO=sudo
+          if ! command -v python >/dev/null 2>&1; then
+            mkdir -p "$HOME/.pybin"
+            ln -sf "$(command -v python3)" "$HOME/.pybin/python"
+            echo "$HOME/.pybin" >> "$GITHUB_PATH"
+          fi
+          if ! python3 -m venv /tmp/venvcheck >/dev/null 2>&1; then
+            $SUDO apt-get update && $SUDO apt-get install -y python3-venv
+          fi
+          rm -rf /tmp/venvcheck "$GITHUB_WORKSPACE/synapse"
+      - id: action
+        uses: .
+        with:
+          uploadLogs: false
+      - name: Assert synapse-url output
+        env:
+          ACTUAL: ${{ steps.action.outputs.synapse-url }}
+        run: |
+          echo "actual: $ACTUAL"
+          if [ "$ACTUAL" != "http://localhost:8080/" ]; then
+            echo "FAIL: expected 'http://localhost:8080/'"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert server responds
+        run: |
+          out="$(curl -sf http://localhost:8080/_matrix/client/versions)" || { echo "FAIL: endpoint unreachable"; exit 1; }
+          echo "$out"
+          echo "$out" | grep -q '"versions"' || { echo "FAIL: no versions in response"; exit 1; }
+          echo "PASS"
+      - name: Assert generated config files
+        run: |
+          d="$GITHUB_WORKSPACE/synapse"
+          for f in homeserver.yaml additional.yaml custom.yaml out.log err.log; do
+            [ -f "$d/$f" ] || { echo "FAIL: missing $d/$f"; exit 1; }
+          done
+          cat "$d/additional.yaml"
+          grep -q '"public_baseurl": "http://localhost:8080"' "$d/additional.yaml" || { echo "FAIL: public_baseurl"; exit 1; }
+          grep -q '"port": 8080' "$d/additional.yaml" || { echo "FAIL: port"; exit 1; }
+          grep -q '"rc_message"' "$d/additional.yaml" || { echo "FAIL: rate limiting not disabled"; exit 1; }
+          grep -q '"enable_registration": true' "$d/additional.yaml" || { echo "FAIL: registration"; exit 1; }
+          [ "$(tr -d '[:space:]' < "$d/custom.yaml")" = "{}" ] || { echo "FAIL: custom.yaml not {}"; exit 1; }
+          echo "PASS"

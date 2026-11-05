@@ -1,0 +1,52 @@
+name: Test custom port, public_baseurl and customConfig
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Prepare python environment
+        run: |
+          SUDO=""; [ "$(id -u)" != "0" ] && SUDO=sudo
+          if ! command -v python >/dev/null 2>&1; then
+            mkdir -p "$HOME/.pybin"
+            ln -sf "$(command -v python3)" "$HOME/.pybin/python"
+            echo "$HOME/.pybin" >> "$GITHUB_PATH"
+          fi
+          if ! python3 -m venv /tmp/venvcheck >/dev/null 2>&1; then
+            $SUDO apt-get update && $SUDO apt-get install -y python3-venv
+          fi
+          rm -rf /tmp/venvcheck "$GITHUB_WORKSPACE/synapse"
+      - id: action
+        uses: .
+        with:
+          uploadLogs: false
+          httpPort: 8091
+          public_baseurl: http://synapse.example.test:8091
+          customConfig: '{"max_upload_size": "123M"}'
+      - name: Assert synapse-url output
+        env:
+          ACTUAL: ${{ steps.action.outputs.synapse-url }}
+        run: |
+          echo "actual: $ACTUAL"
+          if [ "$ACTUAL" != "http://localhost:8091/" ]; then
+            echo "FAIL: expected 'http://localhost:8091/'"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert server responds on custom port
+        run: |
+          out="$(curl -sf http://localhost:8091/_matrix/client/versions)" || { echo "FAIL: endpoint unreachable"; exit 1; }
+          echo "$out"
+          echo "$out" | grep -q '"versions"' || { echo "FAIL: no versions"; exit 1; }
+          echo "PASS"
+      - name: Assert config files reflect inputs
+        run: |
+          d="$GITHUB_WORKSPACE/synapse"
+          cat "$d/additional.yaml"
+          cat "$d/custom.yaml"
+          grep -q '"public_baseurl": "http://synapse.example.test:8091"' "$d/additional.yaml" || { echo "FAIL: public_baseurl"; exit 1; }
+          grep -q '"port": 8091' "$d/additional.yaml" || { echo "FAIL: port"; exit 1; }
+          grep -q '"max_upload_size": "123M"' "$d/custom.yaml" || { echo "FAIL: custom config"; exit 1; }
+          echo "PASS"
