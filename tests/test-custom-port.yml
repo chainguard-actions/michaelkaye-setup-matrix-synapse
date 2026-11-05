@@ -1,0 +1,48 @@
+name: Test custom port and public_baseurl
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Ensure python and venv are available
+        run: |
+          SUDO=""; if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+          if ! command -v python >/dev/null 2>&1; then
+            $SUDO ln -sf "$(command -v python3)" /usr/local/bin/python
+          fi
+          python --version
+          if ! python -m venv /tmp/venv-probe >/dev/null 2>&1; then
+            $SUDO apt-get update -y
+            $SUDO apt-get install -y python3-venv
+          fi
+          rm -rf /tmp/venv-probe
+      - id: action
+        uses: .
+        with:
+          uploadLogs: 'false'
+          httpPort: '8091'
+          public_baseurl: 'http://matrix.example.test:8091'
+      - name: Assert synapse-url output
+        env:
+          ACTUAL: ${{ steps.action.outputs.synapse-url }}
+        run: |
+          echo "actual: $ACTUAL"
+          if [ "$ACTUAL" != "http://localhost:8091/" ]; then
+            echo "FAIL: expected 'http://localhost:8091/'"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert synapse is serving on the custom port
+        run: |
+          BODY="$(curl -sf http://localhost:8091/_matrix/client/versions)"
+          echo "body: $BODY"
+          echo "$BODY" | grep -q '"versions"' || { echo "FAIL: no versions"; exit 1; }
+          echo "PASS"
+      - name: Assert public_baseurl in additional config
+        run: |
+          cat "$GITHUB_WORKSPACE/synapse/additional.yaml"
+          grep -q '"public_baseurl": "http://matrix.example.test:8091"' "$GITHUB_WORKSPACE/synapse/additional.yaml" || { echo "FAIL: public_baseurl"; exit 1; }
+          grep -q '"port": 8091' "$GITHUB_WORKSPACE/synapse/additional.yaml" || { echo "FAIL: port"; exit 1; }
+          echo "PASS"

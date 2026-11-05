@@ -1,0 +1,57 @@
+name: Test basic usage
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Ensure python and venv are available
+        run: |
+          SUDO=""; if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+          if ! command -v python >/dev/null 2>&1; then
+            $SUDO ln -sf "$(command -v python3)" /usr/local/bin/python
+          fi
+          python --version
+          if ! python -m venv /tmp/venv-probe >/dev/null 2>&1; then
+            $SUDO apt-get update -y
+            $SUDO apt-get install -y python3-venv
+          fi
+          rm -rf /tmp/venv-probe
+      - id: action
+        uses: .
+        with:
+          uploadLogs: 'false'
+      - name: Assert synapse-url output
+        env:
+          ACTUAL: ${{ steps.action.outputs.synapse-url }}
+        run: |
+          echo "actual: $ACTUAL"
+          if [ "$ACTUAL" != "http://localhost:8080/" ]; then
+            echo "FAIL: expected 'http://localhost:8080/'"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert synapse is serving the client API
+        run: |
+          BODY="$(curl -sf http://localhost:8080/_matrix/client/versions)"
+          echo "body: $BODY"
+          if ! echo "$BODY" | grep -q '"versions"'; then
+            echo "FAIL: versions endpoint did not return versions"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert generated config files
+        run: |
+          cd "$GITHUB_WORKSPACE/synapse"
+          for f in homeserver.yaml additional.yaml custom.yaml out.log err.log; do
+            if [ ! -f "$f" ]; then echo "FAIL: missing $f"; exit 1; fi
+          done
+          cat additional.yaml
+          grep -q '"public_baseurl": "http://localhost:8080"' additional.yaml || { echo "FAIL: public_baseurl"; exit 1; }
+          grep -q '"port": 8080' additional.yaml || { echo "FAIL: port"; exit 1; }
+          grep -q '"rc_message"' additional.yaml || { echo "FAIL: rate limiting not disabled"; exit 1; }
+          if [ "$(tr -d '[:space:]' < custom.yaml)" != "{}" ]; then
+            echo "FAIL: custom.yaml should be {}"; exit 1
+          fi
+          echo "PASS"

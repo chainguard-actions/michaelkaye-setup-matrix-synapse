@@ -1,14 +1,54 @@
-# michaelkaye/setup-matrix-synapse
+# Matrix synapse test server
 
-Deploys a synapse test server
+<p align="center">
+  <a href="https://github.com/michaelkaye/setup-matrix-synapse/actions"><img alt="setup-matrix-synapse status" src="https://github.com/michaelkaye/setup-matrix-synapse/workflows/units-test/badge.svg"></a>
+</p>
 
-Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at [https://github.com/michaelkaye/setup-matrix-synapse](https://github.com/michaelkaye/setup-matrix-synapse).
+## Code in Main
 
-## Versions
+Install the dependencies
 
-| Version | Tag | Upstream commit | Hardening report |
-|---------|-----|-----------------|------------------|
-| v1.0.4 | [`v1.0.4`](https://github.com/chainguard-actions/michaelkaye-setup-matrix-synapse/tree/v1.0.4) | [`b29c5d9`](https://github.com/michaelkaye/setup-matrix-synapse/commit/b29c5d9e4f36958fb642023cc990db9f01ef92e9) | [`HARDENING.md`](https://github.com/chainguard-actions/michaelkaye-setup-matrix-synapse/blob/v1.0.4/HARDENING.md) |
+```bash
+npm install
+```
+
+Run the tests :heavy_check_mark:
+
+```bash
+$ npm test
+
+ PASS  ./index.test.js
+  ✓ throws invalid number (3ms)
+  ✓ wait 500 ms (504ms)
+  ✓ test runs (95ms)
+...
+```
+
+## Package for distribution
+
+GitHub Actions will run the entry point from the action.yml. Packaging assembles the code into one file that can be checked in to Git, enabling fast and reliable execution and preventing the need to check in node_modules.
+
+Actions are run from GitHub repos.  Packaging the action will create a packaged action in the dist folder.
+
+Run prepare
+
+```bash
+npm run prepare
+```
+
+Since the packaged index.js is run from the dist folder.
+
+```bash
+git add dist
+```
+
+## Usage
+
+You can now consume the action by referencing the v1 branch
+
+```yaml
+uses: michaelkaye/setup-matrix-synapse@v1
+```
 
 ## Privacy
 
