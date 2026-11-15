@@ -1,0 +1,49 @@
+name: Test custom httpPort and public_baseurl
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Ensure python and venv are available
+        run: |
+          SUDO=""; [ "$(id -u)" != "0" ] && SUDO="sudo"
+          if ! command -v python3 >/dev/null 2>&1 || ! python3 -m venv /tmp/venvcheck >/dev/null 2>&1; then
+            $SUDO apt-get update
+            $SUDO apt-get install -y python3 python3-venv python3-pip
+          fi
+          rm -rf /tmp/venvcheck
+          if ! command -v python >/dev/null 2>&1; then
+            $SUDO ln -sf "$(command -v python3)" /usr/local/bin/python
+          fi
+          python --version
+      - id: action
+        uses: .
+        with:
+          uploadLogs: false
+          httpPort: 8448
+          public_baseurl: http://synapse.example.test:8448
+      - name: Assert synapse-url output uses custom port
+        env:
+          ACTUAL: ${{ steps.action.outputs.synapse-url }}
+        run: |
+          echo "actual: $ACTUAL"
+          if [ "$ACTUAL" != "http://localhost:8448/" ]; then
+            echo "FAIL: expected 'http://localhost:8448/'"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert additional config reflects inputs
+        run: |
+          F="$GITHUB_WORKSPACE/synapse/additional.yaml"
+          cat "$F"
+          grep -q '"public_baseurl": "http://synapse.example.test:8448"' "$F" || { echo "FAIL: public_baseurl not applied"; exit 1; }
+          grep -q '"port": 8448' "$F" || { echo "FAIL: port not applied"; exit 1; }
+          echo "PASS"
+      - name: Assert server listens on custom port
+        run: |
+          VERSIONS="$(curl -sf http://localhost:8448/_matrix/client/versions)"
+          echo "versions: $VERSIONS"
+          echo "$VERSIONS" | grep -q '"versions"' || { echo "FAIL: server not reachable on 8448"; exit 1; }
+          echo "PASS"

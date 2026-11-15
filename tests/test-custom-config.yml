@@ -1,0 +1,60 @@
+name: Test customConfig overrides defaults
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Ensure python and venv are available
+        run: |
+          SUDO=""; [ "$(id -u)" != "0" ] && SUDO="sudo"
+          if ! command -v python3 >/dev/null 2>&1 || ! python3 -m venv /tmp/venvcheck >/dev/null 2>&1; then
+            $SUDO apt-get update
+            $SUDO apt-get install -y python3 python3-venv python3-pip
+          fi
+          rm -rf /tmp/venvcheck
+          if ! command -v python >/dev/null 2>&1; then
+            $SUDO ln -sf "$(command -v python3)" /usr/local/bin/python
+          fi
+          python --version
+      - id: action
+        uses: .
+        with:
+          uploadLogs: false
+          customConfig: '{"enable_registration": false}'
+      - name: Assert synapse-url output
+        env:
+          ACTUAL: ${{ steps.action.outputs.synapse-url }}
+        run: |
+          echo "actual: $ACTUAL"
+          if [ "$ACTUAL" != "http://localhost:8080/" ]; then
+            echo "FAIL: expected 'http://localhost:8080/'"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert custom.yaml contains the custom config
+        run: |
+          CUSTOM="$(cat "$GITHUB_WORKSPACE/synapse/custom.yaml")"
+          echo "custom.yaml: $CUSTOM"
+          if [ "$CUSTOM" != '{"enable_registration": false}' ]; then
+            echo "FAIL: custom.yaml content mismatch"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert registration is disabled by custom config
+        run: |
+          curl -sf http://localhost:8080/_matrix/client/versions >/dev/null || { echo "FAIL: server not up"; exit 1; }
+          CODE="$(curl -s -o /tmp/reg.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+            -d '{"username":"bob","password":"Sup3rSecret!pw","auth":{"type":"m.login.dummy"}}' \
+            http://localhost:8080/_matrix/client/v3/register)"
+          echo "code: $CODE"; cat /tmp/reg.json; echo
+          if grep -q '"access_token"' /tmp/reg.json; then
+            echo "FAIL: registration succeeded despite enable_registration=false"
+            exit 1
+          fi
+          if [ "$CODE" != "403" ]; then
+            echo "FAIL: expected HTTP 403 for disabled registration"
+            exit 1
+          fi
+          echo "PASS"
